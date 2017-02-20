@@ -1,0 +1,26 @@
+{
+  "name": "aaws",
+  "version": "0.1.0",
+  "description": "An sychronous library for websockets.",
+  "main": "aaws.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/GalacticArc/AwaitAsyncWebsocket.git"
+  },
+  "keywords": [
+    "Websocket",
+    "ws"
+  ],
+  "author": "Semaphorism",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/GalacticArc/AwaitAsyncWebsocket/issues"
+  },
+  "homepage": "https://github.com/GalacticArc/AwaitAsyncWebsocket#readme",
+  "dependencies": {
+    "ws": "^2.1.0"
+  }
+}
