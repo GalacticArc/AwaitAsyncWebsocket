@@ -1,8 +1,8 @@
 # AwaitAsyncWebsocket
 
-No guarantee to work.
+No guarantee to work, but please review the client/server example provided.
 
-A open source wrapper for websockets to make them use promises and await/async.
+A open source wrapper for websockets to make them use promises and await/async allowing client or server to invoke one another and get a response for certain messages.
 
 Client example:
 ```js
