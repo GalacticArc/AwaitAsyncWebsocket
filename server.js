@@ -14,6 +14,8 @@ serverapi.Foo = function(client, message)
 var central = aaws.CreateServer(8080, {api: serverapi});
 
 setInterval(async ()=>{
-  var responses = await central.invokeClients("InvokableFunction", {some: "Data"});
-  console.log("All clients returned their responses: InvokableFunction ", responses);
+  var responses = await central.invokeClients("InvokableFunction", {msg: "Give me your greeting!"});
+  var responses2 = await central.invokeClients("InvokableFunction", {msg: "Give me your greeting!"});
+  console.log("InvokableFunction returned: ", responses);
+  console.log("InvokableFunctionImmediate returned: ", responses2);
 }, 2000);

@@ -1,9 +1,10 @@
 const aaws = require("./aaws.js");
 
-var myLibrary = {};
-var client = null;
-// This will return "Hello world!" after 5 seconds.
-myLibrary.InvokableFunction = function(data)
+// These are functions that can be invoked by the server.
+var ClientFunctions = {};
+
+// This will return "Hello world!" after a second back to the server.
+ClientFunctions.InvokableFunction = function(data)
 {
   return new Promise((resolve, reject)=>{
     setTimeout(()=>{
@@ -12,11 +13,16 @@ myLibrary.InvokableFunction = function(data)
   });
 }
 
+// This will return immediately.
+ClientFunctions.InvokableFunctionImmediate = function(data)
+{
+  return "Hello immediate world!";
+}
 
-var client = aaws.CreateClient("ws://127.0.0.1:8080", {api: myLibrary, reconnect: true});
+var client = aaws.CreateClient("ws://127.0.0.1:8080", {api: ClientFunctions, reconnect: true});
 client.socket.on("open", async function(){
   setInterval(async ()=>{
     var response = await client.send("Foo");
-    console.log("Foo"+response);
+    console.log("Got the second half of Foo"+response+" from the server!");
   }, 1000)
 });
