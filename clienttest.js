@@ -19,6 +19,13 @@ ClientFunctions.InvokableFunctionImmediate = function(data)
   return "Hello immediate world!";
 }
 
+// Output message from the server.
+ClientFunctions.Message = function(data)
+{
+  console.log("The server told us something! ", data);
+  return;
+}
+
 var client = aaws.CreateClient("ws://127.0.0.1:8080", {api: ClientFunctions, reconnect: true});
 client.socket.on("open", async function(){
   setInterval(async ()=>{

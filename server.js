@@ -18,4 +18,8 @@ setInterval(async ()=>{
   var responses2 = await central.invokeClients("InvokableFunction", {msg: "Give me your greeting!"});
   console.log("InvokableFunction returned: ", responses);
   console.log("InvokableFunctionImmediate returned: ", responses2);
+
+  // Send the first client a mesage.
+  if(central.clients[0]) central.clients[0].send("Message", "Hello, you're the first!");
+
 }, 2000);
