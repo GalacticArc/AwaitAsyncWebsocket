@@ -16,6 +16,10 @@ clientlibrary.Foo = function(data)
 }
 
 var client = aaws.CreateClient("ws://127.0.0.1:8080", {api: myLibrary, reconnect: true});
+client.socket.on("open", async function(){
+    var response = await client.send("Foo");
+    console.log("Got the second half of Foo"+response+" from the server!");
+});
 ```
 
 Server example:
