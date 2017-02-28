@@ -142,7 +142,7 @@ exports.CreateClientSocket = async function(client, location, opt)
   client.socket.on('close', function open() {
     if(opt.reconnect && opt.reconnect === false) return;
     setTimeout(function(){
-      exports.CreateClientSocket(client, location);
+      exports.CreateClientSocket(client, location, opt);
     }, 1000);
   });
 
