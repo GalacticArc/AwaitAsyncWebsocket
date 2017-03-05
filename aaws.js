@@ -13,20 +13,25 @@ exports.makeClient = function()
   {
     try {
       var j = JSON.parse(message);
-      if(!j.sequence && !j.instruction) return;
-      if(!j.instruction){
+      if(!j.sequence && !j.instruction && !j.event) return;
+      if(!j.instruction && !j.event){
         // Response
         if(!client.callbacks[j.sequence]){
-          throw new Error("No sequence callback for "+j.sequence);
+          client.callbacks[j.sequence].y(null);
         } else {
           client.callbacks[j.sequence].y(j.data);
         }
+      } else if(j.event && !j.instruction){
+        if(!client.api[j.event]) return;
+        client.api[j.event](j.data);
       } else {
         // Invoke
         if(client.api[j.instruction]){
           var response = await client.api[j.instruction](j.data);
           client.reply(j.sequence, response);
         } else {
+          delete j;
+          client.reply(j.sequence, null);
           throw new Error("No instruction for "+j.instruction);
         }
       }
@@ -35,11 +40,11 @@ exports.makeClient = function()
     }
   }
 
-  client.send = async function(instruction, data)
+  client.invoke = async function(instruction, data)
   {
-    return new Promise(async (y,n)=>{
+    var promise = new Promise(async (y,n)=>{
       client.seq++;
-      client.callbacks[client.seq] = {y:y,n:n};
+      client.callbacks[client.seq] = {y:y,n:n,p:promise};
       var packet = {
         sequence: client.seq,
         data: data
@@ -49,6 +54,18 @@ exports.makeClient = function()
       }
       client.socket.send(JSON.stringify(packet));
     });
+    return promise;
+  }
+
+  // <Event name>e, <variant>data
+  client.fire = async function(e, data)
+  {
+    if(!e) return;
+    var packet = {
+      event: e,
+      data: data
+    };
+    client.socket.send(JSON.stringify(packet));
   }
 
   client.reply = function(sequence, data)
@@ -63,7 +80,7 @@ exports.makeClient = function()
   return client;
 }
 
-exports.CreateServer = function(port, opt)
+exports.CreateServer = function(serveropt, opt)
 {
   opt = opt || {};
   if(!opt.api){ return "Clients require an api"; }
@@ -75,9 +92,7 @@ exports.CreateServer = function(port, opt)
     api: opt.api
   };
 
-  server.socket = new WebSocket.Server({
-      port: port
-  });
+  server.socket = new WebSocket.Server(serveropt);
 
   // Waits for each client to be invoked, not ideal.
   server.invokeClients = async function(instruction, message)
@@ -87,10 +102,21 @@ exports.CreateServer = function(port, opt)
       if(server.clients[i].socket.readyState != WebSocket.OPEN){
         continue;
       }
-      var r = await server.clients[i].send(instruction, message);
-      results.push(r);
+      var r = await server.clients[i].invoke(instruction, message);
+      if(r) results.push(r);
     }
     return results;
+  }
+
+  // Fires all clients with <Event name>e
+  server.fireClients = async function(e, message)
+  {
+    for(var i in server.clients){
+      if(server.clients[i].socket.readyState != WebSocket.OPEN){
+        continue;
+      }
+      server.clients[i].fire(e, message);
+    }
   }
 
   server.receive = async function(message, flags, client)
@@ -142,7 +168,7 @@ exports.CreateClientSocket = async function(client, location, opt)
   client.socket.on('close', function open() {
     if(opt.reconnect && opt.reconnect === false) return;
     setTimeout(function(){
-      exports.CreateClientSocket(client, location);
+      exports.CreateClientSocket(client, location, opt);
     }, 1000);
   });
 
