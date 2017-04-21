@@ -7,7 +7,8 @@ exports.makeClient = function()
     callbacks: {},
     socket: null,
     api: {},
-    isServer: false
+    isServer: false,
+    invokeTimeout: 1000
   };
   client.receive = async function(message)
   {
@@ -21,14 +22,20 @@ exports.makeClient = function()
         } else {
           client.callbacks[j.sequence].y(j.data);
         }
+        delete client.callbacks[j.sequence];
       } else if(j.event && !j.instruction){
         if(!client.api[j.event]) return;
         client.api[j.event](j.data);
       } else {
         // Invoke
         if(client.api[j.instruction]){
-          var response = await client.api[j.instruction](j.data);
-          client.reply(j.sequence, response);
+          try {
+            var response = await client.api[j.instruction](j.data);
+            client.reply(j.sequence, response);
+          } catch(err2){
+            console.log(err2);
+            client.reply(j.sequence, null);
+          }
         } else {
           delete j;
           client.reply(j.sequence, null);
@@ -36,7 +43,17 @@ exports.makeClient = function()
         }
       }
     } catch(err){
+      delete j;
+      delete message;
       return;
+    }
+  }
+
+  client.timeoutpacket = async function(sequence)
+  {
+    var n = Math.floor(Date.now() / 1000);
+    if(client.callbacks[sequence]){
+      client.callbacks[sequence].y(null);
     }
   }
 
@@ -44,7 +61,7 @@ exports.makeClient = function()
   {
     var promise = new Promise(async (y,n)=>{
       client.seq++;
-      client.callbacks[client.seq] = {y:y,n:n,p:promise};
+      client.callbacks[client.seq] = {y:y,n:n,p:promise,n:Math.floor(Date.now() / 1000)};
       var packet = {
         sequence: client.seq,
         data: data
@@ -52,7 +69,12 @@ exports.makeClient = function()
       if(instruction){
         packet.instruction = instruction;
       }
-      client.socket.send(JSON.stringify(packet));
+      if(client.socket.readyState == WebSocket.OPEN){
+        setTimeout(client.timeoutpacket, client.invokeTimeout, packet.sequence);
+        client.socket.send(JSON.stringify(packet));
+      } else {
+        n(new Error("WebSocket is closed!"));
+      }
     });
     return promise;
   }
@@ -65,7 +87,8 @@ exports.makeClient = function()
       event: e,
       data: data
     };
-    client.socket.send(JSON.stringify(packet));
+    if(client.socket.readyState == WebSocket.OPEN)
+      client.socket.send(JSON.stringify(packet));
   }
 
   client.reply = function(sequence, data)
@@ -77,6 +100,11 @@ exports.makeClient = function()
     client.socket.send(JSON.stringify(packet))
   }
 
+  client.close = function()
+  {
+    client.socket.close(1000,"Client close");
+    client.closeClient = true;
+  }
   return client;
 }
 
@@ -159,20 +187,34 @@ exports.CreateServer = function(serveropt, opt)
 
 exports.CreateClientSocket = async function(client, location, opt)
 {
+  try {
+    if(client.closeClient){
+      return;
+    }
+    client.socket = new WebSocket(location, {perMessageDeflate: false});
+    client.socket.on('open', function open() {
 
-  client.socket = new WebSocket(location, {perMessageDeflate: false});
-  client.socket.on('open', function open() {
+    });
 
-  });
+    client.socket.on('error', function handleError(err) {
 
-  client.socket.on('close', function open() {
-    if(opt.reconnect && opt.reconnect === false) return;
+    });
+
+    client.socket.on('close', function open() {
+      if(opt.reconnect && opt.reconnect === false || client.closeClient) return;
+      setTimeout(function(){
+        exports.CreateClientSocket(client, location, opt);
+      }, opt.reconnect_time || 1000);
+    });
+
+    client.socket.on('message', client.receive);
+  } catch(err){
+    if(opt.reconnect && opt.reconnect === false || client.closeClient) return;
+    if(client.socket.readyState == WebSocket.OPEN) return;
     setTimeout(function(){
       exports.CreateClientSocket(client, location, opt);
-    }, 1000);
-  });
-
-  client.socket.on('message', client.receive);
+    }, opt.reconnect_time || 1000);
+  }
 }
 
 exports.CreateClient = function(location, opt)
