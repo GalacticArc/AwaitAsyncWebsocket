@@ -24,8 +24,8 @@ exports.makeClient = function()
         }
         delete client.callbacks[j.sequence];
       } else if(j.event && !j.instruction){
-        if(!client.api[j.event]) return;
-        client.api[j.event](j.data);
+        if(client.api[j.event])
+          client.api[j.event](j.data);
       } else {
         // Invoke
         if(client.api[j.instruction]){
@@ -102,7 +102,7 @@ exports.makeClient = function()
 
   client.close = function()
   {
-    client.socket.close(1000,"Client close");
+    client.socket.close(1,"Client close");
     client.closeClient = true;
   }
   return client;
@@ -130,6 +130,7 @@ exports.CreateServer = function(serveropt, opt)
       if(server.clients[i].socket.readyState != WebSocket.OPEN){
         continue;
       }
+
       var r = await server.clients[i].invoke(instruction, message);
       if(r) results.push(r);
     }
@@ -159,6 +160,9 @@ exports.CreateServer = function(serveropt, opt)
         } else {
           throw new Error("No instruction for "+j.instruction);
         }
+      } else if(j.event){
+        if(server.api[j.event])
+          server.api[j.event](j.data);
       } else {
         client.receive(message, flags);
       }
@@ -197,7 +201,7 @@ exports.CreateClientSocket = async function(client, location, opt)
     });
 
     client.socket.on('error', function handleError(err) {
-
+      throw err;
     });
 
     client.socket.on('close', function open() {
