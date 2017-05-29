@@ -18,14 +18,14 @@ exports.makeClient = function()
       if(!j.instruction && !j.event){
         // Response
         if(!client.callbacks[j.sequence]){
-          client.callbacks[j.sequence].y(null);
+          await client.callbacks[j.sequence].y(null);
         } else {
-          client.callbacks[j.sequence].y(j.data);
+          await client.callbacks[j.sequence].y(j.data);
         }
         delete client.callbacks[j.sequence];
       } else if(j.event && !j.instruction){
-        if(client.api[j.event])
-          client.api[j.event](j.data);
+        if(!client.api[j.event]) return;
+        client.api[j.event](j.data);
       } else {
         // Invoke
         if(client.api[j.instruction]){
@@ -37,14 +37,13 @@ exports.makeClient = function()
             client.reply(j.sequence, null);
           }
         } else {
-          delete j;
           client.reply(j.sequence, null);
           throw new Error("No instruction for "+j.instruction);
         }
       }
-    } catch(err){
       delete j;
       delete message;
+    } catch(err){
       return;
     }
   }
@@ -54,6 +53,7 @@ exports.makeClient = function()
     var n = Math.floor(Date.now() / 1000);
     if(client.callbacks[sequence]){
       client.callbacks[sequence].y(null);
+      delete client.callbacks[sequence];
     }
   }
 
@@ -75,6 +75,9 @@ exports.makeClient = function()
       } else {
         n(new Error("WebSocket is closed!"));
       }
+      delete instruction;
+      delete data;
+      delete packet;
     });
     return promise;
   }
@@ -102,7 +105,7 @@ exports.makeClient = function()
 
   client.close = function()
   {
-    client.socket.close(1,"Client close");
+    client.socket.close(1000,"Client close");
     client.closeClient = true;
   }
   return client;
@@ -130,7 +133,6 @@ exports.CreateServer = function(serveropt, opt)
       if(server.clients[i].socket.readyState != WebSocket.OPEN){
         continue;
       }
-
       var r = await server.clients[i].invoke(instruction, message);
       if(r) results.push(r);
     }
@@ -160,9 +162,6 @@ exports.CreateServer = function(serveropt, opt)
         } else {
           throw new Error("No instruction for "+j.instruction);
         }
-      } else if(j.event){
-        if(server.api[j.event])
-          server.api[j.event](j.data);
       } else {
         client.receive(message, flags);
       }
@@ -201,7 +200,7 @@ exports.CreateClientSocket = async function(client, location, opt)
     });
 
     client.socket.on('error', function handleError(err) {
-      throw err;
+
     });
 
     client.socket.on('close', function open() {
