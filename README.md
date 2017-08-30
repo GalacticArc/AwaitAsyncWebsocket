@@ -7,7 +7,10 @@ A open source wrapper for websockets to make them use promises and await/async a
 Client example:
 ```js
 var aaws = require("./aaws.js");
-var comm = aaws.CreateClient("ws://127.0.0.1:4999", {api: api, reconnect: true});
+var clientFunctions = {}
+clientFunctions.print = console.log
+
+var comm = aaws.CreateClient("ws://127.0.0.1:4999", {api: clientFunctions, reconnect: true});
 
 (async ()=>{
 	var data = await comm.invoke("getStoredData"); 
@@ -42,4 +45,8 @@ myserverFunctions.storeData = function(data)
 
 var server = aaws.CreateServer({ port: 4999 },{ api: myserverFunctions }); // Begin listening
 console.log("Listening on port 4999");
+
+setInterval(()=>{
+	server.fireClients("This will show on all clients.");
+}, 1000);
 ```
