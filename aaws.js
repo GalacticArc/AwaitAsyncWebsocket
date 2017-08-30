@@ -162,6 +162,9 @@ exports.CreateServer = function(serveropt, opt)
         } else {
           throw new Error("No instruction for "+j.instruction);
         }
+      } else if(j.event){
+        if(server.api[j.event])
+          server.api[j.event](j.data);
       } else {
         client.receive(message, flags);
       }
