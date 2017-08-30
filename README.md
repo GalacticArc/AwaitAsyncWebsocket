@@ -6,33 +6,40 @@ A open source wrapper for websockets to make them use promises and await/async a
 
 Client example:
 ```js
-const aaws = require("./aaws.js");
+var aaws = require("./aaws.js");
+var comm = aaws.CreateClient("ws://127.0.0.1:4999", {api: api, reconnect: true});
 
-var clientlibrary = {}; 
-// The server can invoke the client and get "Bar" as a response.
-clientlibrary.Foo = function(data)
-{
-  return "Bar";
-}
+(async ()=>{
+	var data = await comm.invoke("getStoredData"); 
+	// Wait for the data from the server
+	
+	comm.fire("storeData", [1,2,3,4]);
+	// Update the data
+})();
 
-var client = aaws.CreateClient("ws://127.0.0.1:8080", {api: myLibrary, reconnect: true});
-client.socket.on("open", async function(){
-    var response = await client.send("Foo");
-    console.log("Got the second half of Foo"+response+" from the server!");
-});
+setTimeout(async ()=>{
+	var data = await comm.invoke("getStoredData"); 
+	// Get the data again.
+}, 500);
 ```
 
 Server example:
 ```js
+var aaws = require("./aaws.js");
+var myData = [];
 
-const aaws = require("./aaws.js");
-var serverapi = {};
-
-// Client will be able to invoke "Foo" on the server to get "Bar" as a response.
-serverapi.Foo = function(client, message)
+// Declare my functions the clients can call.
+var myserverFunctions = {}
+myserverFunctions.getStoredData = function()
 {
-  return "Bar";
+	return myData;
 }
 
-var central = aaws.CreateServer(8080, {api: serverapi});
+myserverFunctions.storeData = function(data)
+{
+	myData = data;
+}
+
+var server = aaws.CreateServer({ port: 4999 },{ api: myserverFunctions }); // Begin listening
+console.log("Listening on port 4999");
 ```
