@@ -8,7 +8,7 @@ exports.makeClient = function()
     socket: null,
     api: {},
     isServer: false,
-    invokeTimeout: 1000
+    invokeTimeout: 10000
   };
   client.receive = async function(message)
   {
@@ -157,14 +157,14 @@ exports.CreateServer = function(serveropt, opt)
       if(j.instruction){
         // Invoke
         if(server.api[j.instruction]){
-          var response = await server.api[j.instruction](j.data);
+          var response = await server.api[j.instruction](j.data, client);
           client.reply(j.sequence, response);
         } else {
           throw new Error("No instruction for "+j.instruction);
         }
       } else if(j.event){
         if(server.api[j.event])
-          server.api[j.event](j.data);
+          server.api[j.event](j.data, client);
       } else {
         client.receive(message, flags);
       }
