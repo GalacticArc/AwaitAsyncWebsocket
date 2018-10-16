@@ -8,20 +8,26 @@ exports.makeClient = function()
     socket: null,
     api: {},
     isServer: false,
-    invokeTimeout: 10000
+    invokeTimeout: 10000,
+    sendcheck: 0,
+    queue: []
   };
   client.receive = async function(message)
   {
     try {
-      var j = JSON.parse(message);
+      let j = JSON.parse(message);
+      j.sequence=j.sequence.toString();
       if(!j.sequence && !j.instruction && !j.event) return;
       if(!j.instruction && !j.event){
         // Response
+
         if(!client.callbacks[j.sequence]){
-          await client.callbacks[j.sequence].y(null);
+          await client.callbacks[j.sequence].finish(null);
         } else {
-          await client.callbacks[j.sequence].y(j.data);
+          await client.callbacks[j.sequence].finish(j.data);
         }
+        clearTimeout(client.callbacks[j.sequence].to);
+        client.sendcheck--;
         delete client.callbacks[j.sequence];
       } else if(j.event && !j.instruction){
         if(!client.api[j.event]) return;
@@ -30,7 +36,7 @@ exports.makeClient = function()
         // Invoke
         if(client.api[j.instruction]){
           try {
-            var response = await client.api[j.instruction](j.data);
+            let response = await client.api[j.instruction](j.data);
             client.reply(j.sequence, response);
           } catch(err2){
             console.log(err2);
@@ -41,43 +47,72 @@ exports.makeClient = function()
           throw new Error("No instruction for "+j.instruction);
         }
       }
-      delete j;
-      delete message;
     } catch(err){
+      console.log(err);
       return;
     }
   }
 
-  client.timeoutpacket = async function(sequence)
+  client.timeoutpacket = async function(sequence, timeouterror)
   {
-    var n = Math.floor(Date.now() / 1000);
-    if(client.callbacks[sequence]){
-      client.callbacks[sequence].y(null);
-      delete client.callbacks[sequence];
+    try {
+      sequence=sequence.toString();
+      let n = Math.floor(Date.now() / 1000);
+      if(client.callbacks[sequence]){
+        if(timeouterror){
+          client.callbacks[sequence].stop(new Error("Timeout occurred."));
+
+        } else {
+          console.log("Returning null");
+          client.callbacks[sequence].finish(null);
+        }
+
+        delete client.callbacks[sequence];
+        client.sendcheck--;
+      } else {
+        console.log("No sequence for "+sequence+"???", Object.keys(client.callbacks));
+      }
+    } catch (e) {
+      console.log(e);
     }
   }
 
-  client.invoke = async function(instruction, data)
+  client.invoke = async function(instruction, data, opt)
   {
-    var promise = new Promise(async (y,n)=>{
+    let timeout = client.invokeTimeout;
+    let errorontimeout = false;
+    if(opt && opt.timeout){
+      timeout = opt.timeout;
+    }
+    if(opt && opt.error){
+      errorontimeout = true;
+    }
+    let promise;
+    promise = new Promise(async (finish,stop)=>{
       client.seq++;
-      client.callbacks[client.seq] = {y:y,n:n,p:promise,n:Math.floor(Date.now() / 1000)};
-      var packet = {
-        sequence: client.seq,
+      let rid = client.seq;
+      let tof = setTimeout(client.timeoutpacket, timeout, rid, errorontimeout);
+      // client.seq++;
+      client.callbacks[rid.toString()] = {
+        finish: finish,
+        stop: stop,
+        t: Math.floor(Date.now() / 1000),
+        to: tof
+      };
+      client.sendcheck++;
+      let packet = {
+        sequence: rid,
         data: data
       };
       if(instruction){
         packet.instruction = instruction;
       }
+      let jpack = JSON.stringify(packet);
       if(client.socket.readyState == WebSocket.OPEN){
-        setTimeout(client.timeoutpacket, client.invokeTimeout, packet.sequence);
-        client.socket.send(JSON.stringify(packet));
+        client.socket.send(jpack);
       } else {
-        n(new Error("WebSocket is closed!"));
+        client.queue.push(jpack);
       }
-      delete instruction;
-      delete data;
-      delete packet;
     });
     return promise;
   }
@@ -86,12 +121,16 @@ exports.makeClient = function()
   client.fire = async function(e, data)
   {
     if(!e) return;
-    var packet = {
+    let packet = {
       event: e,
       data: data
     };
-    if(client.socket.readyState == WebSocket.OPEN)
-      client.socket.send(JSON.stringify(packet));
+    let jpack = JSON.stringify(packet);
+    if(client.socket.readyState == WebSocket.OPEN){
+      client.socket.send(jpack);
+    } else {
+      client.queue.push(jpack);
+    }
   }
 
   client.reply = function(sequence, data)
@@ -115,12 +154,17 @@ exports.CreateServer = function(serveropt, opt)
 {
   opt = opt || {};
   if(!opt.api){ return "Clients require an api"; }
-  var server = {
+  let server = {
     socket: null,
     clients: [],
     seq: 0,
     callbacks: {},
-    api: opt.api
+    api: opt.api,
+    stats: {
+      events: 0,
+      invokes: 0,
+      errors: 0
+    }
   };
 
   server.socket = new WebSocket.Server(serveropt);
@@ -128,21 +172,34 @@ exports.CreateServer = function(serveropt, opt)
   // Waits for each client to be invoked, not ideal.
   server.invokeClients = async function(instruction, message)
   {
-    var results = [];
-    for(var i in server.clients){
+    let results = [];
+    for(let i in server.clients){
       if(server.clients[i].socket.readyState != WebSocket.OPEN){
         continue;
       }
-      var r = await server.clients[i].invoke(instruction, message);
+      let r = await server.clients[i].invoke(instruction, message);
       if(r) results.push(r);
     }
     return results;
   }
 
+  // Clears unused clients.
+  server.collectGarbage = function()
+  {
+    let newlist = [];
+    for(let client of server.clients){
+      if(client.socket.readyState == WebSocket.OPEN || client.socket.readyState == WebSocket.CONNECTING){
+        newlist.push(client);
+      }
+    }
+
+    server.clients = newlist;
+  }
+
   // Fires all clients with <Event name>e
   server.fireClients = async function(e, message)
   {
-    for(var i in server.clients){
+    for(let i in server.clients){
       if(server.clients[i].socket.readyState != WebSocket.OPEN){
         continue;
       }
@@ -150,36 +207,51 @@ exports.CreateServer = function(serveropt, opt)
     }
   }
 
+  // Fires first client available
+  server.fireFirst = async function(e, message)
+  {
+    for(var i in server.clients){
+      if(server.clients[i].socket.readyState == WebSocket.OPEN){
+        server.clients[i].fire(e, message);
+        break;
+      }
+    }
+  }
+
   server.receive = async function(message, flags, client)
   {
     try {
-      var j = JSON.parse(message);
+      let j = JSON.parse(message);
       if(j.instruction){
+        server.stats.invokes++;
         // Invoke
         if(server.api[j.instruction]){
-          var response = await server.api[j.instruction](j.data, client);
+          let response = await server.api[j.instruction](j.data, client);
           client.reply(j.sequence, response);
         } else {
           throw new Error("No instruction for "+j.instruction);
         }
       } else if(j.event){
+        server.stats.events++;
         if(server.api[j.event])
           server.api[j.event](j.data, client);
       } else {
         client.receive(message, flags);
       }
     } catch(err){
+      server.stats.errors++;
+      console.log(err);
       return;
     }
   }
 
   server.socket.on("connection", wsc => {
-    var client = exports.makeClient();
+    let client = exports.makeClient();
     client.isServer = true;
     client.socket = wsc;
     client.socket.on("error", function(){
       client.socket.close();
-      delete wsc;
+      server.collectGarbage();
     });
 
     client.socket.on('message', (m,f)=>{
@@ -199,7 +271,14 @@ exports.CreateClientSocket = async function(client, location, opt)
     }
     client.socket = new WebSocket(location, {perMessageDeflate: false});
     client.socket.on('open', function open() {
-
+      while(true){
+        let packet = client.queue.shift();
+        if(!packet) break;
+        client.socket.send(packet);
+        if(client.queue.length == 0){
+          break;
+        }
+      }
     });
 
     client.socket.on('error', function handleError(err) {
@@ -225,10 +304,8 @@ exports.CreateClientSocket = async function(client, location, opt)
 
 exports.CreateClient = function(location, opt)
 {
-  var client = exports.makeClient();
+  let client = exports.makeClient();
   client.api = opt.api;
-
   exports.CreateClientSocket(client, location, opt);
-
   return client;
 }
